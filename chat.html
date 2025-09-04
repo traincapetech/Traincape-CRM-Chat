@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Chat - WhatsApp Clone</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body class="chat-body">
+  <div class="chat-container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="user-icon" onclick="openProfileModal()">
+          <img src="{% if profile_image %}{{ profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" class="profile-pic">
+        </div>
+        <span class="sidebar-username"> {{ user }}</span>
+        <div class="sidebar-actions">
+          <button class="button-90" onclick="openCreateGroup()">+ Group</button>
+          <a href="{{ url_for('logout') }}" class="button-90 logout-btn">Logout</a>
+        </div>
+      </div>
+      <div class="chat-list">
+        <div class="sidebar-search">
+          <input type="text" id="sidebarSearch" placeholder="Search users & groups..." onkeyup="filterSidebarList()">
+        </div>
+        {% for u in users %}
+        <div class="chat-item">
+          <img src="{% if u.profile_image %}{{ u.profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" class="user-list-pic" onclick="openUserProfile('{{ u.username }}')">
+          <span onclick="window.location.href='{{ url_for('chat.chat_page') }}?user={{ u.username }}'">{{ u.username }}</span>
+          <div class="chat-item-overlay" onclick="window.location.href='{{ url_for('chat.chat_page') }}?user={{ u.username }}'"></div>
+        </div>
+        {% endfor %}
+        {% for g in groups %}
+        <div class="chat-item">
+          <img src="{{ g.image or url_for('static', filename='default_profile.png') }}" alt="Group" class="user-list-pic" onclick="openGroupProfile('{{ g._id }}')">
+          <div onclick="window.location.href='{{ url_for('chat.chat_page') }}?group={{ g._id }}'"><strong>{{ g.name }}</strong></div>
+          <div class="chat-item-overlay" onclick="window.location.href='{{ url_for('chat.chat_page') }}?group={{ g._id }}'"></div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Chat Area -->
+    <div class="chat-area">
+      {% if selected_user %}
+      <div class="chat-header">
+        {% set user_obj = users|selectattr("username", "equalto", selected_user)|first %}
+        <img src="{% if user_obj and user_obj.profile_image %}{{ user_obj.profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" class="user-list-pic" onclick="openUserProfile('{{ selected_user }}')">
+        <span class="chat-title">{{ selected_user }}</span>
+        <input type="text" id="chatSearch" class="chat-search" placeholder="Search messages..." onkeyup="filterChatMessages()">
+      </div>
+      <div class="chat-messages">
+        {% for m in messages %}
+        <div class="message {% if m.sender == user %}outgoing{% else %}incoming{% endif %}">
+          <div class="msg-content">
+            {% if m.replyTo %}
+            <div class="reply-preview">
+              <strong>{% if m.sender == user %}You replied to:{% else %}Replying to:{% endif %}</strong>
+              <div class="reply-text">{{ m.replyTo.text }}</div>
+            </div>
+            {% endif %}
+            {% if m.type == "text" %}
+            <p>{{ m.message }}</p>
+            {% elif m.type == "image" %}
+            <img src="{{ m.file_url }}" alt="Image" class="msg-image" onclick="openImageModal('{{ m.file_url }}')">
+            {% elif m.type == "file" %}
+            <a href="{{ m.file_url }}" download>{{ m.file_name }}</a>
+            {% endif %}
+            <small class="msg-time">
+              {% if m.timestamp.__class__.__name__ == "datetime" %}
+              {{ m.timestamp.strftime("%I:%M %p") }}
+              {% else %}
+              {{ m.timestamp }}
+              {% endif %}
+            </small>
+          </div>
+          <div class="msg-options">
+            <span class="dots" onclick="toggleOptions(this)">⋮</span>
+            <div class="options-menu">
+              <div onclick="replyMessage('{{ m._id }}', '{{ m.message|escape }}')">Reply</div>
+              <div onclick="forwardMessage('{{ m._id }}')">Forward</div>
+              <div onclick="copyMessage('{{ m.message|escape }}')">Copy</div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <form method="POST" action="{{ url_for('send.send_message') }}" enctype="multipart/form-data" class="chat-input">
+        <input type="hidden" name="reply_message_id" id="reply_message_id">
+        <input type="hidden" name="reply_message_text" id="reply_message_text">
+        <input type="hidden" name="receiver" value="{{ selected_user or selected_group._id }}">
+        <input type="hidden" name="chat_type" value="{{ 'user' if selected_user else 'group' }}">
+        <div id="replyPreviewBox" class="reply-bar" style="display:none;">
+          <span id="replyPreviewText"></span>
+          <button type="button" class="reply-cancel" onclick="cancelReply()">×</button>
+        </div>
+        <div class="input-row">
+          <label class="file-label">
+            <input type="file" name="file" hidden onchange="handleFileSelect(this)">
+            <span class="plus-icon">+</span>
+          </label>
+          <div class="file-preview-container" style="display:none;">
+            <div class="file-preview-box">
+              <div class="file-name"></div>
+              <span class="file-remove" onclick="removeSelectedFile(this.closest('form'))">&times;</span>
+            </div>
+          </div>
+          <input type="text" name="message" placeholder="Type a message..." class="message-box">
+          <button type="submit" class="send-btn">➤</button>
+        </div>
+      </form>
+      {% elif selected_group %}
+      <div class="chat-header">
+        <img src="{{ selected_group.image or url_for('static', filename='default_profile.png') }}" alt="Group" class="user-list-pic" onclick="openGroupProfile('{{ selected_group._id }}')">
+        <span class="chat-title">{{ selected_group.name }}</span>
+        <input type="text" id="chatSearch" class="chat-search" placeholder="Search messages..." onkeyup="filterChatMessages()">
+      </div>
+      <div class="chat-messages">
+        {% for m in messages %}
+        <div class="message {% if m.sender == user %}outgoing{% else %}incoming{% endif %}">
+          <div class="msg-content">
+            <strong>{% if m.sender != user %}{{ m.sender }}{% endif %}</strong>
+            {% if m.replyTo %}
+            <div class="reply-preview">
+              <strong>{% if m.sender == user %}You replied to:{% else %}Replying to:{% endif %}</strong>
+              <div class="reply-text">{{ m.replyTo.text }}</div>
+            </div>
+            {% endif %}
+            {% if m.type == "text" %}
+            <p>{{ m.message }}</p>
+            {% elif m.type == "image" %}
+            <img src="{{ m.file_url }}" alt="Image" onclick="openImageModal('{{ m.file_url }}')" class="msg-image">
+            {% elif m.type == "file" %}
+            <a href="{{ m.file_url }}" download>{{ m.file_name }}</a>
+            {% endif %}
+            <small class="msg-time">
+              {% if m.timestamp.__class__.__name__ == "datetime" %}
+              {{ m.timestamp.strftime("%I:%M %p") }}
+              {% else %}
+              {{ m.timestamp }}
+              {% endif %}
+            </small>
+          </div>
+          <div class="msg-options">
+            <span class="dots" onclick="toggleOptions(this)">⋮</span>
+            <div class="options-menu">
+              <div onclick="replyMessage('{{ m._id }}', '{{ m.message|escape }}')">Reply</div>
+              <div onclick="forwardMessage('{{ m._id }}')">Forward</div>
+              <div onclick="copyMessage('{{ m.message|escape }}')">Copy</div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <form method="POST" action="{{ url_for('send.send_message') }}" enctype="multipart/form-data" class="chat-input">
+        <input type="hidden" name="reply_message_id" id="reply_message_id">
+        <input type="hidden" name="reply_message_text" id="reply_message_text">
+        <input type="hidden" name="receiver" value="{{ selected_user or selected_group._id }}">
+        <input type="hidden" name="chat_type" value="{{ 'user' if selected_user else 'group' }}">
+        <div id="replyPreviewBox" class="reply-bar" style="display:none;">
+          <span id="replyPreviewText"></span>
+          <button type="button" class="reply-cancel" onclick="cancelReply()">×</button>
+        </div>
+        <div class="file-preview-container" style="display:none;">
+          <div class="file-preview-box">
+            <div class="file-name"></div>
+            <span class="file-remove" onclick="removeSelectedFile(this.closest('form'))">&times;</span>
+          </div>
+        </div>
+        <div class="input-row">
+          <label class="file-label">
+            <input type="file" name="file" hidden onchange="handleFileSelect(this)">
+            <span class="plus-icon">+</span>
+          </label>
+          <input type="text" name="message" placeholder="Type a message..." class="message-box">
+          <button type="submit" class="send-btn">➤</button>
+        </div>
+      </form>
+      {% else %}
+      <div class="chat-header">No chats available</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Profile Modal -->
+  <div id="profileModal" class="modal">
+    <div class="modal-content profile-modal">
+      <span class="close" onclick="closeProfileModal()">&times;</span>
+      <h2>Update Profile</h2>
+      <form id="profileForm" method="POST" enctype="multipart/form-data" action="{{ url_for('profile.update_profile') }}">
+        <label>Name</label>
+        <input type="text" name="username" value="{{ user }}">
+        <label>Email</label>
+        <input type="email" name="email">
+        <label>Password</label>
+        <input type="password" name="password">
+        <label>Profile Picture</label>
+        <input type="file" name="profile_pic" accept="image/*">
+        <button type="submit">Update</button>
+      </form>
+      <div id="profileMessage"></div>
+    </div>
+  </div>
+
+  <!-- Group Profile Modal -->
+  <div id="groupProfileModal" class="modal">
+    <div class="modal-content" style="max-width:500px;">
+      <span class="close" onclick="closeGroupProfile()">&times;</span>
+      <div id="groupProfileView">
+        <img id="groupProfilePic" src="" alt="Group" class="profile-pic">
+        <h3 id="groupProfileName" style="text-align:center; margin-bottom:10px;"></h3>
+        <p id="groupProfileDesc"></p>
+        {% if selected_group and selected_group.created_by == user %}
+          <div id="groupAdminControls" style="display:flex;">
+            <button class="button-90" onclick="showGroupEditForm()">Edit Group</button>
+            <button class="button-90" onclick="showMemberManagement()">Manage Members</button>
+          </div>
+        {% endif %}
+        <h4 style="margin-top:12px;">Members</h4>
+        <ul id="groupMembersList" style="max-height:150px; overflow:auto; padding:0; margin:0; list-style:none;"></ul>
+      </div>
+      <div id="memberManagement" style="display:none;">
+        <h3>Manage Members</h3>
+        <div class="member-list">
+          <h4>Current Members</h4>
+          <div id="currentMembersList"></div>
+          <h4>Add New Members</h4>
+          <div id="availableUsersList"></div>
+        </div>
+        <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
+          <button type="button" class="btn" onclick="backToGroupProfile()">Back</button>
+          <button type="button" class="btn btn-primary" onclick="saveMembers()">Save Changes</button>
+        </div>
+      </div>
+      <form id="groupProfileForm" method="POST" enctype="multipart/form-data" action="{{ url_for('groups.update_group') }}" style="display:none; text-align:left;">
+        <input type="hidden" name="group_id" id="editGroupId">
+        <label>Group Name</label>
+        <input type="text" name="name" id="editGroupName" required>
+        <label>Description</label>
+        <textarea name="description" id="editGroupDesc" rows="3" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;"></textarea>
+        <label>Group Image</label>
+        <input type="file" name="image" accept="image/*">
+        <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
+          <button type="button" class="btn" onclick="closeGroupProfile()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Update</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Other User Profile Modal -->
+  <div id="userProfileModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeUserProfile()">&times;</span>
+      <div id="userProfileContent">
+        <img id="userProfilePic" src="" alt="Profile" class="profile-pic">
+        <h3 id="userProfileName"></h3>
+        <p id="userProfileEmail"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Group Modal -->
+  <div id="createGroupModal" class="modal">
+    <div class="modal-content" style="max-width:520px;">
+      <span class="close" onclick="closeCreateGroup()">&times;</span>
+      <h2>Create Group</h2>
+      <form id="createGroupForm" method="POST" enctype="multipart/form-data" action="{{ url_for('groups.create_group') }}">
+        <label>Group Name</label>
+        <input type="text" name="name" required placeholder="Enter group name">
+        <label>Group Description</label>
+        <textarea name="description" rows="3" placeholder="Enter group description (optional)" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;"></textarea>
+        <label>Group Image (optional)</label>
+        <input type="file" name="image" accept="image/*">
+        <label>Members</label>
+        <div class="member-list" style="max-height:220px; overflow:auto; border:1px solid #ddd; padding:8px; border-radius:8px;">
+          {% for u in users %}
+          <div class="member-item" style="display:flex;align-items:center;gap:8px;margin:6px 0;">
+            <input type="checkbox" name="members" value="{{ u.username }}" id="mem_{{ loop.index }}">
+            <label for="mem_{{ loop.index }}" style="cursor:pointer;"><strong>{{ u.username }}</strong></label>
+          </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
+          <button type="button" class="btn" onclick="closeCreateGroup()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+      <div id="createGroupMessage" style="margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <!-- Forward Message Modal -->
+  <div id="forwardModal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+      <span class="close" onclick="closeForwardModal()">&times;</span>
+      <h3>Forward Message</h3>
+      <p>Select recipient:</p>
+      <div class="forward-list" style="max-height:280px;overflow:auto;border:1px solid #ddd;padding:8px;border-radius:8px;">
+        {% for u in users %}
+        <div class="forward-item" style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer;" onclick="sendForward('{{ u.username }}','user')">
+          <img src="{% if u.profile_image %}{{ u.profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+          <span>{{ u.username }}</span>
+        </div>
+        {% endfor %}
+        {% for g in groups %}
+        <div class="forward-item" style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer;" onclick="sendForward('{{ g._id }}','group')">
+          <img src="{{ g.image or url_for('static', filename='default_profile.png') }}" alt="Group" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+          <span>{{ g.name }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Image Modal (viewer) -->
+  <div id="imageModal" class="modal">
+    <div class="modal-content" style="max-width: 90vw;">
+      <span class="close" onclick="closeImageModal()">&times;</span>
+      <img id="modalImage" src="" alt="Preview" style="max-width:100%;height:auto;">
+    </div>
+  </div>
+
+  <script>
+    const CURRENT_USER = "{{ user | trim}}";
+    var socket = io();
+
+    {% if selected_user %}
+    socket.emit("join", "{{ user }}");
+    {% elif selected_group %}
+    socket.emit("join", "{{ selected_group._id }}");
+    {% endif %}
+
+    socket.on("new_message", function (msg) {
+      if (msg.chat_type === "user") {
+        if ((msg.sender === "{{ selected_user }}" && msg.receiver === "{{ user }}") ||
+          (msg.sender === "{{ user }}" && msg.receiver === "{{ selected_user }}")) {
+          addMessageToChat(msg);
+        }
+      } else if (msg.chat_type === "group") {
+        if (msg.group_id === "{{ selected_group._id }}") {
+          addMessageToChat(msg);
+        }
+      }
+    });
+
+    function addMessageToChat(m) {
+      let container = document.querySelector(".chat-messages");
+      if (!container) return;
+      let div = document.createElement("div");
+      div.classList.add("message", m.sender === "{{ user }}" ? "outgoing" : "incoming");
+
+      let html = `<div class="msg-content">`;
+      if (m.type === "text") {
+        html += `<p>${m.message}</p>`;
+      } else if (m.type === "image") {
+        html += `<img src="${m.file_url}" class="msg-image">`;
+      } else if (m.type === "file") {
+        html += `<a href="${m.file_url}" download>${m.file_name}</a>`;
+      }
+      html += `<small class="msg-time">${new Date(m.timestamp).toLocaleTimeString()}</small></div>`;
+      div.innerHTML = html;
+
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // Image modal
+    function openImageModal(src) {
+      document.getElementById("imageModal").style.display = "block";
+      document.getElementById("modalImage").src = src;
+    }
+    function closeImageModal() {
+      document.getElementById("imageModal").style.display = "none";
+    }
+
+    // Profile modals
+    function openProfileModal() { $("#profileModal").show(); }
+    function closeProfileModal() { $("#profileModal").hide(); }
+
+    function openUserProfile(username) {
+      $.ajax({
+        url: "/user_profile/" + username,
+        type: "GET",
+        success: function (res) {
+          $("#userProfilePic").attr("src", res.profile_image);
+          $("#userProfileName").text(res.username);
+          $("#userProfileEmail").text(res.email || "No email provided");
+          $("#userProfileModal").show();
+        }
+      });
+    }
+    function closeUserProfile() { $("#userProfileModal").hide(); }
+
+    // Member variables
+    let membersToAdd = [];
+    let membersToRemove = [];
+
+    function showMemberManagement() {
+      const groupId = $("#editGroupId").val();
+      
+      $("#groupProfileView").hide();
+      $("#memberManagement").show();
+
+      membersToAdd = [];
+      membersToRemove = [];
+      
+      // Fetch members and available users
+      $.ajax({
+        url: "/available_users",
+        type: "GET",
+        data: { group_id: groupId },
+        success: function(data) {
+          renderCurrentMembers(data.members || []);
+          renderAvailableUsers(data.available || []);
+        },
+        error: function(xhr) {
+          alert("Could not load members: " + xhr.responseText);
+        }
+      });
+    }
+
+    // Render current members of the group
+    function renderCurrentMembers(members) {
+      const list = $("#currentMembersList");
+      list.empty();
+      
+      if (!members || members.length === 0) {
+        list.append("<div style='padding:8px;color:#666;'>No members</div>");
+        return;
+      }
+
+      members.forEach(m => {
+        const img = m.profile_image;
+        const username = m.username;
+        
+        list.append(`
+          <div class="member-item" data-username="${username}" style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #eee;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <img src="${img}" alt="${username}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+              <span>${username}</span>
+            </div>
+            <button type="button" class="remove-btn" onclick="removeMember('${username}')" ${username === CURRENT_USER ? 'disabled' : ''}>
+              ${username === CURRENT_USER ? 'You' : '×'}
+            </button>
+          </div>
+        `);
+      });
+    }
+
+    // Render users available to add
+    function renderAvailableUsers(users) {
+      const list = $("#availableUsersList");
+      list.empty();
+
+      if (!users || users.length === 0) {
+        list.append("<div style='padding:8px;color:#666;'>No users available</div>");
+        return;
+      }
+
+      users.forEach(u => {
+        const img = u.profile_image;
+        list.append(`
+          <div class="member-item" data-username="${u.username}" style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #eee;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <img src="${img}" alt="${u.username}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+              <span>${u.username}</span>
+            </div>
+            <button type="button" class="add-btn" onclick="addMember('${u.username}')">+</button>
+          </div>
+        `);
+      });
+    }
+
+    // Add a member to the group
+    function addMember(username) {
+      if (!membersToAdd.includes(username)) {
+        membersToAdd.push(username);
+        $(`#availableUsersList .member-item[data-username="${username}"]`).hide();
+        
+        const img = $(`#availableUsersList .member-item[data-username="${username}"] img`).attr("src");
+        $("#currentMembersList").append(`
+          <div class="member-item temp-add" data-username="${username}" style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #eee;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <img src="${img}" alt="${username}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+              <span>${username}</span>
+            </div>
+            <button type="button" class="remove-btn" onclick="cancelAdd('${username}')">×</button>
+          </div>
+        `);
+      }
+    }
+
+    // Cancel adding a member
+    function cancelAdd(username) {
+      const index = membersToAdd.indexOf(username);
+      if (index !== -1) {
+        membersToAdd.splice(index, 1);
+      }
+      
+      $(`.temp-add[data-username="${username}"]`).remove();
+      $(`#availableUsersList .member-item[data-username="${username}"]`).show();
+    }
+
+    // Remove a member from the group
+    function removeMember(username) {
+      if (username === CURRENT_USER) {
+        alert("You cannot remove yourself from the group");
+        return;
+      }
+      
+      if (!membersToRemove.includes(username)) {
+        membersToRemove.push(username);
+        $(`#currentMembersList .member-item[data-username="${username}"]`).addClass("marked-remove").css("opacity", "0.5");
+      }
+    }
+
+    // Save member changes
+    function saveMembers() {
+      const groupId = $("#editGroupId").val();
+      
+      if (membersToAdd.length === 0 && membersToRemove.length === 0) {
+        backToGroupProfile();
+        return;
+      }
+      
+      $.ajax({
+        url: "/update_group_members",
+        type: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({
+          group_id: groupId,
+          add: membersToAdd,
+          remove: membersToRemove
+        }),
+        success: function() {
+          alert("Members updated successfully!");
+          membersToAdd = [];
+          membersToRemove = [];
+          backToGroupProfile();
+          openGroupProfile(groupId);
+        },
+        error: function(xhr) {
+          alert("Error updating members: " + xhr.responseText);
+        }
+      });
+    }
+
+    // Return to group profile view
+    function backToGroupProfile() {
+      $("#memberManagement").hide();
+      $("#groupProfileForm").hide();
+      $("#groupProfileView").show();
+    }
+
+    // Profile update handling
+    $("#profileForm").on("submit", function (e) {
+      e.preventDefault();
+      var formData = new FormData(this);
+      $.ajax({
+        url: $(this).attr("action"),
+        type: "POST",
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function () { 
+          $("#profileMessage").html("<p style='color:green'>Profile updated successfully!</p>");
+        },
+        error: function () { 
+          $("#profileMessage").html("<p style='color:red'>Error updating profile</p>");
+        }
+      });
+    });
+
+    // Group form handling
+    $("#groupProfileForm").on("submit", function(e) {
+      e.preventDefault();
+      const groupId = $("#editGroupId").val();
+      
+      if (!groupId) {
+        alert("Error: No group selected");
+        return;
+      }
+      
+      var formData = new FormData(this);
+      
+      $.ajax({
+        url: $(this).attr("action"),
+        type: "POST",
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function() {
+          alert("Group updated successfully!");
+          closeGroupProfile();
+          location.reload();
+        },
+        error: function(xhr) {
+          alert("Error updating group");
+        }
+      });
+    });
+
+    // Open group profile
+    function openGroupProfile(groupId) {
+      $.ajax({
+        url: "/group_profile/" + groupId,
+        type: "GET",
+        success: function(res) {
+          $("#groupProfilePic").attr("src", res.image || "/static/default_profile.png");
+          $("#groupProfileName").text(res.name);
+          $("#groupProfileDesc").text(res.description || "No description");
+          $("#editGroupId").val(groupId);
+          $("#groupAdminControls").css("display", "flex");
+          renderGroupMembers(res.members);
+          $("#groupProfileModal").show();
+        }
+      });
+    }
+
+    // Show edit form for group
+    function showGroupEditForm() {
+      $("#groupProfileView").hide();
+      $("#groupProfileForm").show();
+    }
+    
+    // Close group profile modal
+    function closeGroupProfile() { 
+      $("#groupProfileModal").hide();
+    }
+
+    // Search filters
+    function filterSidebarList() {
+      var input = document.getElementById("sidebarSearch").value.toLowerCase();
+      document.querySelectorAll(".chat-list .chat-item").forEach(function (item) {
+        item.style.display = item.innerText.toLowerCase().includes(input) ? "" : "none";
+      });
+    }
+    
+    function filterChatMessages() {
+      var input = document.getElementById("chatSearch").value.toLowerCase();
+      document.querySelectorAll(".chat-messages .message").forEach(function (msg) {
+        msg.style.display = msg.innerText.toLowerCase().includes(input) ? "" : "none";
+      });
+    }
+
+    // Message options menu
+    function toggleOptions(el) {
+      let menu = el.nextElementSibling;
+      document.querySelectorAll(".options-menu").forEach(m => { if (m !== menu) m.style.display = "none"; });
+      menu.style.display = (menu.style.display === "block") ? "none" : "block";
+    }
+
+    // Reply handling
+    function replyMessage(msgId, msgText) {
+      document.getElementById("reply_message_id").value = msgId;
+      document.getElementById("reply_message_text").value = msgText;
+      document.getElementById("replyPreviewText").innerText = msgText;
+      document.getElementById("replyPreviewBox").style.display = "flex";
+    }
+    
+    function cancelReply() {
+      document.getElementById("reply_message_id").value = "";
+      document.getElementById("reply_message_text").value = "";
+      document.getElementById("replyPreviewBox").style.display = "none";
+    }
+
+    // Forward message
+    var forwardMsgId = null;
+    function forwardMessage(msgId) { 
+      forwardMsgId = msgId; 
+      $("#forwardModal").show();
+    }
+    
+    function closeForwardModal() { 
+      $("#forwardModal").hide();
+      forwardMsgId = null;
+    }
+    
+    function sendForward(targetId, chatType) {
+      if (!forwardMsgId) return;
+      $.ajax({
+        url: "/forward_message",
+        type: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({ message_id: forwardMsgId, target_id: targetId, chat_type: chatType }),
+        success: function () { 
+          alert("Message forwarded!");
+          closeForwardModal();
+        },
+        error: function () {
+          alert("Error forwarding message");
+        }
+      });
+    }
+
+    // Copy message to clipboard
+    function copyMessage(msg) {
+      navigator.clipboard.writeText(msg).then(() => alert("Message copied!"));
+    }
+
+    // Close menus when clicking elsewhere
+    document.addEventListener("click", function (e) {
+      if (!e.target.classList.contains("dots")) {
+        document.querySelectorAll(".options-menu").forEach(m => m.style.display = "none");
+      }
+    });
+
+    // Group creation form handling
+    $("#createGroupForm").on("submit", function (e) {
+      e.preventDefault();
+      var formData = new FormData(this);
+
+      $.ajax({
+        url: $(this).attr("action"),
+        type: "POST",
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function () {
+          $("#createGroupMessage").html("<p style='color:green'>Group created successfully!</p>");
+          closeCreateGroup();
+          location.reload();
+        },
+        error: function (xhr) {
+          $("#createGroupMessage").html("<p style='color:red'>" + xhr.responseText + "</p>");
+        }
+      });
+    });
+
+    function renderGroupMembers(members) {
+      const list = $("#groupMembersList");
+      list.empty();
+      
+      if (!members || !members.length) {
+        list.append("<li>No members yet</li>");
+        return;
+      }
+      
+      // Debug log to check what we're receiving
+      console.log("Members data:", members);
+
+      members.forEach(member => {
+        // Handle different possible formats of member data
+        let username, profileImg;
+        
+        if (typeof member === 'string') {
+          // If member is just a string (username)
+          username = member;
+          profileImg = "/static/default_profile.png";
+        } else {
+          // If member is an object with username and profile_image
+          username = member.username || "Unknown";
+          profileImg = member.profile_image || "/static/default_profile.png";
+        }
+        
+        list.append(`
+          <li style="display:flex; align-items:center; gap:8px; padding:8px 4px; border-bottom:1px solid #eee;">
+            <img src="${profileImg}" alt="${username}" style="width:32px; height:32px; border-radius:50%; object-fit:cover;">
+            <span>${username}</span>
+          </li>
+        `);
+      });
+    }
+
+    function openCreateGroup() {
+      $("#createGroupModal").show();
+    }
+
+    function closeCreateGroup() {
+      $("#createGroupModal").hide();
+      $("#createGroupForm")[0].reset();
+      $("#createGroupMessage").html("");
+    }
+
+    $(window).on("click", function (e) {
+      if ($(e.target).is("#createGroupModal")) {
+        closeCreateGroup();
+      }
+    });
+
+    $(document).on("keydown", function (e) {
+      if (e.key === "Escape") {
+        closeCreateGroup();
+        closeProfileModal();
+        closeGroupProfile();
+        closeUserProfile();
+        closeForwardModal();
+        closeImageModal();
+      }
+    });
+
+    function handleFileSelect(input) {
+      const file = input.files[0];
+      if (!file) return;
+      
+      // Check 5MB limit
+      if (file.size > 5 * 1024 * 1024) {
+        alert("File size exceeds 5MB limit");
+        input.value = "";
+        return;
+      }
+      
+      const form = input.form;
+      const container = form.querySelector('.file-preview-container');
+      const nameDisplay = form.querySelector('.file-name');
+      
+      // Set icon based on file type
+      let icon = '📄';
+      if (file.type.startsWith('image/')) icon = '🖼️';
+      else if (file.type.startsWith('video/')) icon = '🎬';
+      else if (file.type.startsWith('audio/')) icon = '🎵';
+      else if (file.name.match(/\.pdf$/i)) icon = '📕';
+      else if (file.name.match(/\.(doc|docx)$/i)) icon = '📝';
+      else if (file.name.match(/\.(js|py|html|css)$/i)) icon = '💻';
+      
+      // Display file info
+      nameDisplay.textContent = `${icon} ${file.name} (${Math.round(file.size/1024)} KB)`;
+      container.style.display = 'block';
+    }
+
+    function removeSelectedFile(form) {
+      const fileInput = form.querySelector('input[type="file"]');
+      const container = form.querySelector('.file-preview-container');
+      
+      fileInput.value = "";
+      container.style.display = "none";
+    }
+    // Scroll chat to the last message when opening
+    window.onload = function() {
+      var chatBox = document.querySelector('.chat-messages');
+      if (chatBox) {
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+    };
+  </script>
+</body>
+</html>
