@@ -178,8 +178,8 @@
 
   <!-- Profile Modal -->
   <div id="profileModal" class="modal">
-    <div class="modal-content profile-modal">
-      <span class="close" onclick="closeProfileModal()">&times;</span>
+    <div class="modal-content profile-modal" style="position:relative;">
+      <button type="button" class="close-modal-btn" onclick="closeProfileModal()">×</button>
       <h2>Update Profile</h2>
       <form id="profileForm" method="POST" enctype="multipart/form-data" action="{{ url_for('profile.update_profile') }}">
         <label>Name</label>
@@ -189,7 +189,11 @@
         <label>Password</label>
         <input type="password" name="password">
         <label>Profile Picture</label>
-        <input type="file" name="profile_pic" accept="image/*">
+        <div class="profile-pic-preview">
+          <img id="profilePicPreview" src="{% if profile_image %}{{ profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" />
+          <button type="button" class="change-pic-btn" onclick="document.getElementById('profilePicInput').click();">Change</button>
+        </div>
+        <input type="file" name="profile_pic" id="profilePicInput" accept="image/*" style="display:none;" onchange="previewProfilePic(this)">
         <button type="submit">Update</button>
       </form>
       <div id="profileMessage"></div>
@@ -849,6 +853,15 @@
         el.textContent = utcToIST(utc);
       });
     };
+    function previewProfilePic(input) {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          document.getElementById('profilePicPreview').src = e.target.result;
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
   </script>
 </body>
 </html>
