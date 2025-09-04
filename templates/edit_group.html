@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Edit Group</title>
+</head>
+<body>
+  <h2>Edit Group</h2>
+  <form method="POST" enctype="multipart/form-data">
+    <label>Group Name</label>
+    <input type="text" name="name" value="{{ group.name }}" required><br>
+
+    <label>Description</label>
+    <textarea name="description">{{ group.description }}</textarea><br>
+
+    <label>Group Image</label>
+    <input type="file" name="image"><br>
+
+    <button type="submit">Save Changes</button>
+  </form>
+</body>
+</html>
