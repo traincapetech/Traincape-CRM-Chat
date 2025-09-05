@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8" />
   <title>Chat - WhatsApp Clone</title>
@@ -7,36 +8,54 @@
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
+
 <body class="chat-body">
   <div class="chat-container">
     <!-- Sidebar -->
     <div class="sidebar">
       <div class="sidebar-header">
         <div class="user-icon" onclick="openProfileModal()">
-          <img src="{% if profile_image %}{{ profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" class="profile-pic">
+          <img
+            src="{% if profile_image %}{{ profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}"
+            alt="Profile" class="profile-pic">
         </div>
         <span class="sidebar-username"> {{ user }}</span>
+
         <div class="sidebar-actions">
           <button class="button-90" onclick="openCreateGroup()">+ Group</button>
           <a href="{{ url_for('logout') }}" class="button-90 logout-btn">Logout</a>
         </div>
       </div>
+
       <div class="chat-list">
         <div class="sidebar-search">
           <input type="text" id="sidebarSearch" placeholder="Search users & groups..." onkeyup="filterSidebarList()">
         </div>
+
+        <!-- Users -->
         {% for u in users %}
         <div class="chat-item">
-          <img src="{% if u.profile_image %}{{ u.profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" class="user-list-pic" onclick="openUserProfile('{{ u.username }}')">
-          <span onclick="window.location.href='{{ url_for('chat.chat_page') }}?user={{ u.username }}'">{{ u.username }}</span>
-          <div class="chat-item-overlay" onclick="window.location.href='{{ url_for('chat.chat_page') }}?user={{ u.username }}'"></div>
+          <img
+            src="{% if u.profile_image %}{{ u.profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}"
+            alt="Profile" class="user-list-pic" onclick="openUserProfile('{{ u.username }}')">
+          <span onclick="window.location.href='{{ url_for('chat.chat_page') }}?user={{ u.username }}'">
+            {{ u.username }}
+          </span>
+          <div class="chat-item-overlay"
+            onclick="window.location.href='{{ url_for('chat.chat_page') }}?user={{ u.username }}'"></div>
         </div>
         {% endfor %}
+
+        <!-- Groups -->
         {% for g in groups %}
         <div class="chat-item">
-          <img src="{{ g.image or url_for('static', filename='default_profile.png') }}" alt="Group" class="user-list-pic" onclick="openGroupProfile('{{ g._id }}')">
-          <div onclick="window.location.href='{{ url_for('chat.chat_page') }}?group={{ g._id }}'"><strong>{{ g.name }}</strong></div>
-          <div class="chat-item-overlay" onclick="window.location.href='{{ url_for('chat.chat_page') }}?group={{ g._id }}'"></div>
+          <img src="{{ g.image or url_for('static', filename='default_profile.png') }}" alt="Group"
+            class="user-list-pic" onclick="openGroupProfile('{{ g._id }}')">
+          <div onclick="window.location.href='{{ url_for('chat.chat_page') }}?group={{ g._id }}'">
+            <strong>{{ g.name }}</strong>
+          </div>
+          <div class="chat-item-overlay"
+            onclick="window.location.href='{{ url_for('chat.chat_page') }}?group={{ g._id }}'"></div>
         </div>
         {% endfor %}
       </div>
@@ -45,58 +64,79 @@
     <!-- Chat Area -->
     <div class="chat-area">
       {% if selected_user %}
+      <!-- Header -->
       <div class="chat-header">
         {% set user_obj = users|selectattr("username", "equalto", selected_user)|first %}
-        <img src="{% if user_obj and user_obj.profile_image %}{{ user_obj.profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" class="user-list-pic" onclick="openUserProfile('{{ selected_user }}')">
+        <img
+          src="{% if user_obj and user_obj.profile_image %}{{ user_obj.profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}"
+          alt="Profile" class="user-list-pic" onclick="openUserProfile('{{ selected_user }}')">
         <span class="chat-title">{{ selected_user }}</span>
-        <input type="text" id="chatSearch" class="chat-search" placeholder="Search messages..." onkeyup="filterChatMessages()">
+
+        <input type="text" id="chatSearch" class="chat-search" placeholder="Search messages..."
+          onkeyup="filterChatMessages()">
       </div>
+
+      <!-- Messages -->
       <div class="chat-messages">
+        {% set ns = namespace(last_date=None) %}
         {% for m in messages %}
-        <div class="message {% if m.sender == user %}outgoing{% else %}incoming{% endif %}">
-          <div class="msg-content">
-            {% if m.replyTo %}
-            <div class="reply-preview">
-              <strong>{% if m.sender == user %}You replied to:{% else %}Replying to:{% endif %}</strong>
-              <div class="reply-text">{{ m.replyTo.text }}</div>
+          {% set msg_date = m.timestamp[:10] %}
+          
+          {% if ns.last_date != msg_date %}
+            <div class="date-label" style="text-align:center;color:#888;font-size:12px;margin:20px 0 8px;">
+              {{ "Today" if msg_date == today_ist else "Yesterday" if msg_date == yesterday_ist else msg_date[8:10] ~ '/' ~ msg_date[5:7] ~ '/' ~ msg_date[0:4] }}
             </div>
-            {% endif %}
-            {% if m.type == "text" %}
-            <p>{{ m.message }}</p>
-            {% elif m.type == "image" %}
-            <img src="{{ m.file_url }}" alt="Image" class="msg-image" onclick="openImageModal('{{ m.file_url }}')">
-            {% elif m.type == "file" %}
-            <a href="{{ m.file_url }}" download>{{ m.file_name }}</a>
-            {% endif %}
-            <small class="msg-time" data-utc="{{ m.timestamp }}">
-              <!-- Time will be filled by JS -->
-            </small>
-          </div>
-          <div class="msg-options">
-            <span class="dots" onclick="toggleOptions(this)">⋮</span>
-            <div class="options-menu">
-              <div onclick="replyMessage('{{ m._id }}', '{{ m.message|escape }}')">Reply</div>
-              <div onclick="forwardMessage('{{ m._id }}')">Forward</div>
-              <div onclick="copyMessage('{{ m.message|escape }}')">Copy</div>
+            {% set ns.last_date = msg_date %}
+          {% endif %}
+          
+          <div class="message {% if m.sender == user %}outgoing{% else %}incoming{% endif %}">
+            <div class="msg-content">
+              {% if m.type == "text" %}
+                <p>{{ m.message }}</p>
+              {% elif m.type == "image" %}
+                <img src="{{ m.file_url }}" alt="Image" class="msg-image">
+              {% elif m.type == "file" %}
+                <a href="{{ m.file_url }}" download>{{ m.file_name }}</a>
+              {% endif %}
+              <small class="msg-time">
+                {# --- Convert UTC to IST --- #}
+                {% set hour = m.timestamp[11:13]|int %}
+                {% set min = m.timestamp[14:16]|int %}
+                {% set min = min + 30 %}
+                {% set hour = hour + (min // 60) + 5 %}
+                {% set min = min % 60 %}
+                {% set hour = hour % 24 %}
+                {% set ampm = "AM" if hour < 12 else "PM" %}
+                {% set hour12 = (hour % 12) if (hour % 12) != 0 else 12 %}
+                {{ "%02d"|format(hour12) }}:{{ "%02d"|format(min) }} {{ ampm }}
+              </small>
             </div>
           </div>
-        </div>
         {% endfor %}
+
       </div>
+
       <form method="POST" action="{{ url_for('send.send_message') }}" enctype="multipart/form-data" class="chat-input">
+        <!-- Hidden inputs -->
         <input type="hidden" name="reply_message_id" id="reply_message_id">
         <input type="hidden" name="reply_message_text" id="reply_message_text">
         <input type="hidden" name="receiver" value="{{ selected_user or selected_group._id }}">
         <input type="hidden" name="chat_type" value="{{ 'user' if selected_user else 'group' }}">
+        
+        <!-- Reply preview box -->
         <div id="replyPreviewBox" class="reply-bar" style="display:none;">
           <span id="replyPreviewText"></span>
           <button type="button" class="reply-cancel" onclick="cancelReply()">×</button>
         </div>
+        
+        <!-- File preview container (positioned above the input) -->
+        <!-- Input row -->
         <div class="input-row">
           <label class="file-label">
             <input type="file" name="file" hidden onchange="handleFileSelect(this)">
             <span class="plus-icon">+</span>
           </label>
+          <!-- File preview container (now inline with the input row) -->
           <div class="file-preview-container" style="display:none;">
             <div class="file-preview-box">
               <div class="file-name"></div>
@@ -108,59 +148,78 @@
         </div>
       </form>
       {% elif selected_group %}
+      <!-- Header -->
       <div class="chat-header">
-        <img src="{{ selected_group.image or url_for('static', filename='default_profile.png') }}" alt="Group" class="user-list-pic" onclick="openGroupProfile('{{ selected_group._id }}')">
+        <img src="{{ selected_group.image or url_for('static', filename='default_profile.png') }}" alt="Group"
+          class="user-list-pic" onclick="openGroupProfile('{{ selected_group._id }}')">
         <span class="chat-title">{{ selected_group.name }}</span>
-        <input type="text" id="chatSearch" class="chat-search" placeholder="Search messages..." onkeyup="filterChatMessages()">
+
+        <input type="text" id="chatSearch" class="chat-search" placeholder="Search messages..."
+          onkeyup="filterChatMessages()">
       </div>
+
+      <!-- Messages -->
       <div class="chat-messages">
+        {% set ns = namespace(last_date=None) %}
         {% for m in messages %}
-        <div class="message {% if m.sender == user %}outgoing{% else %}incoming{% endif %}">
-          <div class="msg-content">
-            <strong>{% if m.sender != user %}{{ m.sender }}{% endif %}</strong>
-            {% if m.replyTo %}
-            <div class="reply-preview">
-              <strong>{% if m.sender == user %}You replied to:{% else %}Replying to:{% endif %}</strong>
-              <div class="reply-text">{{ m.replyTo.text }}</div>
+          {% set msg_date = m.timestamp[:10] %}
+          
+          {% if ns.last_date != msg_date %}
+            <div class="date-label" style="text-align:center;color:#888;font-size:12px;margin:20px 0 8px;">
+              {{ "Today" if msg_date == today_ist else "Yesterday" if msg_date == yesterday_ist else msg_date[8:10] ~ '/' ~ msg_date[5:7] ~ '/' ~ msg_date[0:4] }}
             </div>
-            {% endif %}
-            {% if m.type == "text" %}
-            <p>{{ m.message }}</p>
-            {% elif m.type == "image" %}
-            <img src="{{ m.file_url }}" alt="Image" onclick="openImageModal('{{ m.file_url }}')" class="msg-image">
-            {% elif m.type == "file" %}
-            <a href="{{ m.file_url }}" download>{{ m.file_name }}</a>
-            {% endif %}
-            <small class="msg-time" data-utc="{{ m.timestamp }}">
-              <!-- Time will be filled by JS -->
-            </small>
-          </div>
-          <div class="msg-options">
-            <span class="dots" onclick="toggleOptions(this)">⋮</span>
-            <div class="options-menu">
-              <div onclick="replyMessage('{{ m._id }}', '{{ m.message|escape }}')">Reply</div>
-              <div onclick="forwardMessage('{{ m._id }}')">Forward</div>
-              <div onclick="copyMessage('{{ m.message|escape }}')">Copy</div>
+            {% set ns.last_date = msg_date %}
+          {% endif %}
+          
+          <div class="message {% if m.sender == user %}outgoing{% else %}incoming{% endif %}">
+            <div class="msg-content">
+              {% if m.type == "text" %}
+                <p>{{ m.message }}</p>
+              {% elif m.type == "image" %}
+                <img src="{{ m.file_url }}" alt="Image" class="msg-image">
+              {% elif m.type == "file" %}
+                <a href="{{ m.file_url }}" download>{{ m.file_name }}</a>
+              {% endif %}
+              <small class="msg-time">
+                {# --- Convert UTC to IST --- #}
+                {% set hour = m.timestamp[11:13]|int %}
+                {% set min = m.timestamp[14:16]|int %}
+                {% set min = min + 30 %}
+                {% set hour = hour + (min // 60) + 5 %}
+                {% set min = min % 60 %}
+                {% set hour = hour % 24 %}
+                {% set ampm = "AM" if hour < 12 else "PM" %}
+                {% set hour12 = (hour % 12) if (hour % 12) != 0 else 12 %}
+                {{ "%02d"|format(hour12) }}:{{ "%02d"|format(min) }} {{ ampm }}
+              </small>
             </div>
           </div>
-        </div>
         {% endfor %}
+
       </div>
+
       <form method="POST" action="{{ url_for('send.send_message') }}" enctype="multipart/form-data" class="chat-input">
+        <!-- Hidden inputs -->
         <input type="hidden" name="reply_message_id" id="reply_message_id">
         <input type="hidden" name="reply_message_text" id="reply_message_text">
         <input type="hidden" name="receiver" value="{{ selected_user or selected_group._id }}">
         <input type="hidden" name="chat_type" value="{{ 'user' if selected_user else 'group' }}">
+        
+        <!-- Reply preview box -->
         <div id="replyPreviewBox" class="reply-bar" style="display:none;">
           <span id="replyPreviewText"></span>
           <button type="button" class="reply-cancel" onclick="cancelReply()">×</button>
         </div>
+        
+        <!-- File preview container (positioned above the input) -->
         <div class="file-preview-container" style="display:none;">
           <div class="file-preview-box">
             <div class="file-name"></div>
             <span class="file-remove" onclick="removeSelectedFile(this.closest('form'))">&times;</span>
           </div>
         </div>
+        
+        <!-- Input row -->
         <div class="input-row">
           <label class="file-label">
             <input type="file" name="file" hidden onchange="handleFileSelect(this)">
@@ -178,10 +237,11 @@
 
   <!-- Profile Modal -->
   <div id="profileModal" class="modal">
-    <div class="modal-content profile-modal" style="position:relative;">
-      <button type="button" class="close-modal-btn" onclick="closeProfileModal()">×</button>
+    <div class="modal-content profile-modal">
+      <span class="close" onclick="closeProfileModal()">&times;</span>
       <h2>Update Profile</h2>
-      <form id="profileForm" method="POST" enctype="multipart/form-data" action="{{ url_for('profile.update_profile') }}">
+      <form id="profileForm" method="POST" enctype="multipart/form-data"
+        action="{{ url_for('profile.update_profile') }}">
         <label>Name</label>
         <input type="text" name="username" value="{{ user }}">
         <label>Email</label>
@@ -189,11 +249,7 @@
         <label>Password</label>
         <input type="password" name="password">
         <label>Profile Picture</label>
-        <div class="profile-pic-preview">
-          <img id="profilePicPreview" src="{% if profile_image %}{{ profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" />
-          <button type="button" class="change-pic-btn" onclick="document.getElementById('profilePicInput').click();">Change</button>
-        </div>
-        <input type="file" name="profile_pic" id="profilePicInput" accept="image/*" style="display:none;" onchange="previewProfilePic(this)">
+        <input type="file" name="profile_pic" accept="image/*">
         <button type="submit">Update</button>
       </form>
       <div id="profileMessage"></div>
@@ -204,46 +260,71 @@
   <div id="groupProfileModal" class="modal">
     <div class="modal-content" style="max-width:500px;">
       <span class="close" onclick="closeGroupProfile()">&times;</span>
+
+      <!-- Normal group info -->
       <div id="groupProfileView">
         <img id="groupProfilePic" src="" alt="Group" class="profile-pic">
         <h3 id="groupProfileName" style="text-align:center; margin-bottom:10px;"></h3>
         <p id="groupProfileDesc"></p>
+
         {% if selected_group and selected_group.created_by == user %}
           <div id="groupAdminControls" style="display:flex;">
             <button class="button-90" onclick="showGroupEditForm()">Edit Group</button>
             <button class="button-90" onclick="showMemberManagement()">Manage Members</button>
           </div>
         {% endif %}
+
         <h4 style="margin-top:12px;">Members</h4>
         <ul id="groupMembersList" style="max-height:150px; overflow:auto; padding:0; margin:0; list-style:none;"></ul>
       </div>
+
+      <!-- Member Management (only for creator) -->
       <div id="memberManagement" style="display:none;">
         <h3>Manage Members</h3>
+
         <div class="member-list">
           <h4>Current Members</h4>
           <div id="currentMembersList"></div>
+
           <h4>Add New Members</h4>
           <div id="availableUsersList"></div>
         </div>
+
         <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
           <button type="button" class="btn" onclick="backToGroupProfile()">Back</button>
           <button type="button" class="btn btn-primary" onclick="saveMembers()">Save Changes</button>
         </div>
       </div>
-      <form id="groupProfileForm" method="POST" enctype="multipart/form-data" action="{{ url_for('groups.update_group') }}" style="display:none; text-align:left;">
+
+      <!-- Edit form (only for creator) -->
+      <form id="groupProfileForm" method="POST" enctype="multipart/form-data"
+        action="{{ url_for('groups.update_group') }}" style="display:none; text-align:left;">
         <input type="hidden" name="group_id" id="editGroupId">
+
         <label>Group Name</label>
         <input type="text" name="name" id="editGroupName" required>
+
         <label>Description</label>
-        <textarea name="description" id="editGroupDesc" rows="3" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;"></textarea>
+        <textarea name="description" id="editGroupDesc" rows="3"
+          style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;"></textarea>
+
         <label>Group Image</label>
         <input type="file" name="image" accept="image/*">
+
         <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
           <button type="button" class="btn" onclick="closeGroupProfile()">Cancel</button>
           <button type="submit" class="btn btn-primary">Update</button>
         </div>
       </form>
     </div>
+  </div>
+
+  <div class="form-group">
+    <label for="fileUpload">Select Files (Max 5MB)</label>
+    <input type="file" id="fileUpload" multiple onchange="previewFiles()">
+    <div id="previewContainer" class="mt-3"></div>
+    <div id="errorMessage" class="text-danger"></div>
+    <button id="sendButton" class="btn btn-primary mt-2" disabled>Send Files</button>
   </div>
 
   <!-- Other User Profile Modal -->
@@ -263,15 +344,21 @@
     <div class="modal-content" style="max-width:520px;">
       <span class="close" onclick="closeCreateGroup()">&times;</span>
       <h2>Create Group</h2>
-      <form id="createGroupForm" method="POST" enctype="multipart/form-data" action="{{ url_for('groups.create_group') }}">
+      <form id="createGroupForm" method="POST" enctype="multipart/form-data"
+        action="{{ url_for('groups.create_group') }}">
         <label>Group Name</label>
         <input type="text" name="name" required placeholder="Enter group name">
+
         <label>Group Description</label>
-        <textarea name="description" rows="3" placeholder="Enter group description (optional)" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;"></textarea>
+        <textarea name="description" rows="3" placeholder="Enter group description (optional)"
+          style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;"></textarea>
+
         <label>Group Image (optional)</label>
         <input type="file" name="image" accept="image/*">
+
         <label>Members</label>
-        <div class="member-list" style="max-height:220px; overflow:auto; border:1px solid #ddd; padding:8px; border-radius:8px;">
+        <div class="member-list"
+          style="max-height:220px; overflow:auto; border:1px solid #ddd; padding:8px; border-radius:8px;">
           {% for u in users %}
           <div class="member-item" style="display:flex;align-items:center;gap:8px;margin:6px 0;">
             <input type="checkbox" name="members" value="{{ u.username }}" id="mem_{{ loop.index }}">
@@ -279,6 +366,7 @@
           </div>
           {% endfor %}
         </div>
+
         <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
           <button type="button" class="btn" onclick="closeCreateGroup()">Cancel</button>
           <button type="submit" class="btn btn-primary">Create</button>
@@ -294,16 +382,23 @@
       <span class="close" onclick="closeForwardModal()">&times;</span>
       <h3>Forward Message</h3>
       <p>Select recipient:</p>
-      <div class="forward-list" style="max-height:280px;overflow:auto;border:1px solid #ddd;padding:8px;border-radius:8px;">
+
+      <div class="forward-list"
+        style="max-height:280px;overflow:auto;border:1px solid #ddd;padding:8px;border-radius:8px;">
         {% for u in users %}
-        <div class="forward-item" style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer;" onclick="sendForward('{{ u.username }}','user')">
-          <img src="{% if u.profile_image %}{{ u.profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}" alt="Profile" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+        <div class="forward-item" style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer;"
+          onclick="sendForward('{{ u.username }}','user')">
+          <img
+            src="{% if u.profile_image %}{{ u.profile_image }}{% else %}{{ url_for('static', filename='default_profile.png') }}{% endif %}"
+            alt="Profile" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
           <span>{{ u.username }}</span>
         </div>
         {% endfor %}
         {% for g in groups %}
-        <div class="forward-item" style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer;" onclick="sendForward('{{ g._id }}','group')">
-          <img src="{{ g.image or url_for('static', filename='default_profile.png') }}" alt="Group" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+        <div class="forward-item" style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer;"
+          onclick="sendForward('{{ g._id }}','group')">
+          <img src="{{ g.image or url_for('static', filename='default_profile.png') }}" alt="Group"
+            style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
           <span>{{ g.name }}</span>
         </div>
         {% endfor %}
@@ -356,8 +451,7 @@
       } else if (m.type === "file") {
         html += `<a href="${m.file_url}" download>${m.file_name}</a>`;
       }
-      // New way: convert UTC to IST before displaying
-      html += `<small class="msg-time">${utcToIST(m.timestamp)}</small>`;
+      html += `<small class="msg-time">${new Date(m.timestamp).toLocaleTimeString()}</small></div>`;
       div.innerHTML = html;
 
       container.appendChild(div);
@@ -721,8 +815,8 @@
           closeCreateGroup();
           location.reload();
         },
-        error: function (xhr) {
-          $("#createGroupMessage").html("<p style='color:red'>" + xhr.responseText + "</p>");
+        error: function () {
+          $("#createGroupMessage").html("<p style='color:red'>Error creating group</p>");
         }
       });
     });
@@ -832,36 +926,6 @@
         chatBox.scrollTop = chatBox.scrollHeight;
       }
     };
-
-    function utcToIST(utcString) {
-      const date = new Date(utcString);
-      date.setMinutes(date.getMinutes() + 330); // IST offset
-      let hours = date.getHours();
-      const minutes = date.getMinutes().toString().padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12 || 12;
-      return `${hours}:${minutes} ${ampm}`;
-    }
-
-    // On page load, convert all timestamps to IST
-    window.onload = function() {
-      var chatBox = document.querySelector('.chat-messages');
-      if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
-
-      document.querySelectorAll('.msg-time[data-utc]').forEach(function(el) {
-        const utc = el.getAttribute('data-utc');
-        el.textContent = utcToIST(utc);
-      });
-    };
-    function previewProfilePic(input) {
-      if (input.files && input.files[0]) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          document.getElementById('profilePicPreview').src = e.target.result;
-        };
-        reader.readAsDataURL(input.files[0]);
-      }
-    }
   </script>
 </body>
 </html>

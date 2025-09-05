@@ -19,48 +19,41 @@ def login_required(f):
     return decorated
 
 @groups_bp.route("/groups/create", methods=["POST"])
-@login_required
 def create_group():
     try:
         db = get_db()
-        groups_col = db["groups"]
-
-        name = (request.form.get("name") or "").strip()
-        description = (request.form.get("description") or "").strip()
+        name = request.form.get("name", "").strip()
         if not name:
-            abort(400, "Group name required")
+            return jsonify({"error": "Group name required"}), 400
 
-        selected_members = request.form.getlist("members")
-        creator = session["user"]
-        members = list({*(selected_members or []), creator})
+        members = request.form.getlist("members") or []
+        creator = session.get("user")
+        if not creator:
+            return jsonify({"error": "Login required"}), 401
 
         image_url = "/static/default_profile.png"
         file = request.files.get("image")
         if file and file.filename:
-            uploads_dir = os.path.join(os.getcwd(), "uploads")
-            os.makedirs(uploads_dir, exist_ok=True)
-            base = secure_filename(file.filename)
-            fname = f"group_{int(datetime.utcnow().timestamp())}_{base}"
-            save_path = os.path.join(uploads_dir, fname)
-            file.save(save_path)
+            uploads = os.path.join(os.getcwd(), "uploads")
+            os.makedirs(uploads, exist_ok=True)
+            fname = f"group_{int(datetime.utcnow().timestamp())}_{secure_filename(file.filename)}"
+            file.save(os.path.join(uploads, fname))
             image_url = f"/uploads/{fname}"
-
-        invite_code = secrets.token_hex(6)
 
         doc = {
             "name": name,
-            "description": description,
+            "description": request.form.get("description", ""),
             "created_by": creator,
-            "invite_code": invite_code,
+            "invite_code": secrets.token_hex(6),
             "image": image_url,
-            "members": members,
+            "members": list(set(members + [creator])),
             "created_at": get_ist_time()
         }
 
-        groups_col.insert_one(doc)
-        return redirect(url_for("chat.chat_page"))
+        db["groups"].insert_one(doc)
+        return jsonify({"success": True})
     except Exception as e:
-        print("Error creating group:", e)
+        # Show the error directly for debugging
         return jsonify({"error": str(e)}), 500
 
 @groups_bp.route("/update_group", methods=["POST"])
@@ -115,7 +108,8 @@ def update_group_members():
         if not group:
             return jsonify({"error": "Group not found"}), 404
         
-        if group["created_by"] != session["user"]:
+        # Allow any member to edit
+        if session["user"] not in group["members"]:
             return jsonify({"error": "Not authorized"}), 403
         
         current_members = group.get("members", [])
