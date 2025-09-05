@@ -2,8 +2,7 @@ from flask import Blueprint, render_template, session, redirect, url_for, reques
 from db_config import get_db
 from functools import wraps
 from bson import ObjectId
-from datetime import datetime
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def get_ist_time():
     try:
@@ -41,6 +40,10 @@ def chat_page():
 
     messages = []
     selected_group = None
+    
+    ist_now = get_ist_time()
+    today_ist = ist_now.strftime("%Y-%m-%d")
+    yesterday_ist = (ist_now - timedelta(days=1)).strftime("%Y-%m-%d")
 
     if selected_user:
         messages = list(db["messages"].find({
@@ -49,6 +52,9 @@ def chat_page():
                 {"sender": selected_user, "receiver": session["user"]}
             ]
         }).sort("timestamp", 1))
+        for m in messages:
+            if isinstance(m.get("timestamp"), datetime):
+                m["timestamp"] = m["timestamp"].strftime("%Y-%m-%dT%H:%M:%S")
 
     elif selected_group_id:
         try:
@@ -60,6 +66,10 @@ def chat_page():
         messages = list(db["group_messages"].find({
             "group_id": str(group_obj_id)
         }).sort("timestamp", 1))
+        for m in messages:
+            if isinstance(m.get("timestamp"), datetime):
+                m["timestamp"] = m["timestamp"].strftime("%Y-%m-%dT%H:%M:%S")
+
 
     return render_template(
         "chat.html",
@@ -69,5 +79,7 @@ def chat_page():
         selected_user=selected_user,
         selected_group=selected_group,
         messages=messages,
-        profile_image=profile_image
+        profile_image=profile_image,
+        today_ist=today_ist,
+        yesterday_ist=yesterday_ist
     )
